@@ -9,18 +9,15 @@ from tflite_support.task import vision
 import utils
 from sort import Sort
 
-# DroneKit imports
 from dronekit import connect, VehicleMode, Command
 from pymavlink import mavutil
 
-# Global variables
 lock_id = None
 tracked_bbox = []
 P_yaw_deg = 0.08/3
 P_yaw_speed = 0.05
 
-# Connect to the Vehicle
-connection_string = "127.0.0.1:14560"  # Replace with your connection string
+connection_string = "127.0.0.1:14560"
 vehicle = connect(connection_string)
 print("how do i know if its connected")
 
@@ -125,7 +122,7 @@ def run(model: str, camera_id: int, width: int, height: int, num_threads: int,
                 param1, param2, param3 = 0, 0, 0
             else:
                 param1, param2, param3 = get_params(offset)
-                condition_yaw(param1, relative=True)  # Adjust drone yaw
+                condition_yaw(param1, relative=True)  
 
             cv2.putText(image, f"Yaw degree: {param1:.2f}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
             cv2.putText(image, f"Yaw speed: {param2:.2f}", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
