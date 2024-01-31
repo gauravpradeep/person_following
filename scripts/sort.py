@@ -3,32 +3,26 @@ from scipy.optimize import linear_sum_assignment
 from filterpy.kalman import KalmanFilter
 
 def iou_batch(bb_test, bb_gt):
-    if bb_test.shape[0] == 0 or bb_gt.shape[0] == 0:
-        # One or both of the arrays are empty
-        return np.array([])  # Return an empty array or handle as needed
+    if not bb_test.size or not bb_gt.size:
+        return np.array([])  # Return an empty array if either array is empty
 
-    # Expand dimensions to enable broadcasting
-    bb_gt = np.expand_dims(bb_gt, 0)
-    bb_test = np.expand_dims(bb_test, 1)
+    # Broadcasting for intersection calculations
+    xx1 = np.maximum(bb_test[:, None, 0], bb_gt[None, :, 0])
+    yy1 = np.maximum(bb_test[:, None, 1], bb_gt[None, :, 1])
+    xx2 = np.minimum(bb_test[:, None, 2], bb_gt[None, :, 2])
+    yy2 = np.minimum(bb_test[:, None, 3], bb_gt[None, :, 3])
 
-    # Compute intersection
-    xx1 = np.maximum(bb_test[..., 0], bb_gt[..., 0])
-    yy1 = np.maximum(bb_test[..., 1], bb_gt[..., 1])
-    xx2 = np.minimum(bb_test[..., 2], bb_gt[..., 2])
-    yy2 = np.minimum(bb_test[..., 3], bb_gt[..., 3])
     w = np.maximum(0., xx2 - xx1)
     h = np.maximum(0., yy2 - yy1)
     inter_area = w * h
 
-    # Compute union
-    bb_test_area = (bb_test[..., 2] - bb_test[..., 0]) * (bb_test[..., 3] - bb_test[..., 1])
-    bb_gt_area = (bb_gt[..., 2] - bb_gt[..., 0]) * (bb_gt[..., 3] - bb_gt[..., 1])
-    union_area = bb_test_area + bb_gt_area - inter_area
+    # Area calculations outside of the loop
+    bb_test_area = (bb_test[:, 2] - bb_test[:, 0]) * (bb_test[:, 3] - bb_test[:, 1])
+    bb_gt_area = (bb_gt[:, 2] - bb_gt[:, 0]) * (bb_gt[:, 3] - bb_gt[:, 1])
 
-    # Compute IoU
+    union_area = bb_test_area[:, None] + bb_gt_area[None, :] - inter_area
     iou = inter_area / union_area
     return iou
-
 
 def convert_bbox_to_z(bbox):
     w = bbox[2] - bbox[0]
@@ -106,30 +100,20 @@ def associate_detections_to_trackers(detections, trackers, iou_threshold=0.5):
 
     iou_matrix = iou_batch(detections, trackers)
 
-    if min(iou_matrix.shape) > 0:
-        a = (iou_matrix > iou_threshold).astype(np.int32)
-        if a.sum(1).max() == 1 and a.sum(0).max() == 1:
-            matched_indices = np.stack(np.where(a), axis=1)
-        else:
-            cost_matrix = -iou_matrix
-            matched_indices = np.array(linear_sum_assignment(cost_matrix)).T
-    else:
-        matched_indices = np.empty(shape=(0, 2))
+    if iou_matrix.size == 0:
+        return np.empty((0, 2)), np.arange(len(detections)), np.arange(len(trackers))
 
-    unmatched_detections = []
-    for d, det in enumerate(detections):
-        if d not in matched_indices[:, 0]:
-            unmatched_detections.append(d)
-    unmatched_trackers = []
-    for t, trk in enumerate(trackers):
-        if t not in matched_indices[:, 1]:
-            unmatched_trackers.append(t)
+    matched_indices = linear_sum_assignment(-iou_matrix)
+    matched_indices = np.array(matched_indices).T
+
+    unmatched_detections = np.array([d for d in range(len(detections)) if d not in matched_indices[:, 0]])
+    unmatched_trackers = np.array([t for t in range(len(trackers)) if t not in matched_indices[:, 1]])
 
     matches = []
     for m in matched_indices:
         if iou_matrix[m[0], m[1]] < iou_threshold:
-            unmatched_detections.append(m[0])
-            unmatched_trackers.append(m[1])
+            unmatched_detections = np.append(unmatched_detections, m[0])
+            unmatched_trackers = np.append(unmatched_trackers, m[1])
         else:
             matches.append(m.reshape(1, 2))
     if len(matches) == 0:
@@ -137,7 +121,7 @@ def associate_detections_to_trackers(detections, trackers, iou_threshold=0.5):
     else:
         matches = np.concatenate(matches, axis=0)
 
-    return matches, np.array(unmatched_detections), np.array(unmatched_trackers)
+    return matches, unmatched_detections, unmatched_trackers
 
 class Sort:
     def __init__(self, max_age=15, min_hits=7, iou_threshold=0.5):
@@ -168,8 +152,9 @@ class Sort:
 
         # create and initialize new trackers for unmatched detections
         for i in unmatched_dets:
-            trk = KalmanBoxTracker(dets[i, :])
-            self.trackers.append(trk)
+            if isinstance(i, np.integer):
+                trk = KalmanBoxTracker(dets[i, :])
+                self.trackers.append(trk)
         i = len(self.trackers)
         for trk in reversed(self.trackers):
             d = trk.get_state()[0]
