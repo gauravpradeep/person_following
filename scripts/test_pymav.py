@@ -10,6 +10,46 @@ import utils
 from sort import Sort
 from pymavlink import mavutil
 
+
+def arm_and_takeoff(master, aTargetAltitude):
+    """
+    Arms vehicle and fly to aTargetAltitude.
+    """
+    print("Basic pre-arm checks")
+    # Don't try to arm until autopilot is ready
+    # while not master.motors_armed():
+    #     print(" Waiting for vehicle to initialise...")
+    #     time.sleep(1)
+
+    print("Arming motors")
+    # Copter should arm in GUIDED mode
+    
+
+    # Confirm vehicle armed before attempting to take off
+    while not master.motors_armed():
+        print(master.motors_armed())
+        master.mav.command_long_send(
+        master.target_system, master.target_component,
+        mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM,
+        0, 1, 0, 0, 0, 0, 0, 0)
+        # print(" Waiting for arming...")
+        time.sleep(1)
+
+    print("Taking off!")
+    master.mav.command_long_send(
+        master.target_system, master.target_component,
+        mavutil.mavlink.MAV_CMD_NAV_TAKEOFF,
+        0, 0, 0, 0, 0, 0, 0, aTargetAltitude)
+
+    # Wait until the vehicle reaches a safe height
+    while True:
+        print(" Altitude: ", master.location().alt)
+        if master.location().alt >= aTargetAltitude * 0.95:  # Trigger just below target alt.
+            print("Reached target altitude")
+            break
+        time.sleep(1)
+
+
 def condition_yaw(master, heading, speed, relative=True):
     if relative:
         is_relative = 1
@@ -37,7 +77,7 @@ def get_params(offset):
     '''
 
     P_yaw_deg = 0.08 / 3
-    P_yaw_speed = 0.02
+    P_yaw_speed = 0.015
 
     param1 = P_yaw_deg * offset
     param2 = P_yaw_speed * offset
@@ -45,7 +85,7 @@ def get_params(offset):
 
     return param1, param2, param3
 
-def run( model: str, camera_id: int, width: int, height: int, num_threads: int,
+def run( master,model: str, camera_id: int, width: int, height: int, num_threads: int,
         enable_edgetpu: bool) -> None:
     lock_id = None
     tracked_bbox = []
@@ -113,7 +153,7 @@ def run( model: str, camera_id: int, width: int, height: int, num_threads: int,
                 param1, param2, param3 = 0, 0, 0
             else:
                 param1, param2, param3 = get_params(offset)
-                # condition_yaw(master, param1, param2, relative=True)  
+                condition_yaw(master, param1, param2, relative=True)  
 
             cv2.putText(image, f"Yaw degree: {param1:.2f}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
             cv2.putText(image, f"Yaw speed: {param2:.2f}", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
@@ -136,10 +176,12 @@ def main():
     args = parser.parse_args()
 
     # Establishing connection with the drone
-    # master = mavutil.mavlink_connection('udp:127.0.0.1:14550')
-    # master.wait_heartbeat()
+    master = mavutil.mavlink_connection('udp:127.0.0.1:14550')
+    master.wait_heartbeat()
 
-    run(args.model, int(args.cameraId), args.frameWidth, args.frameHeight, int(args.numThreads), bool(args.enableEdgeTPU))
+    arm_and_takeoff(master, 7/3.28)
+
+    run(master,args.model, int(args.cameraId), args.frameWidth, args.frameHeight, int(args.numThreads), bool(args.enableEdgeTPU))
 
 if __name__ == '__main__':
     main()
