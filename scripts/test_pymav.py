@@ -11,6 +11,27 @@ from sort import Sort
 from pymavlink import mavutil
 
 
+
+def set_mode(master, mode):
+    """
+    Sets the flight mode
+    """
+    # mode_id is the numerical representation of the flight mode
+    mode_id = master.mode_mapping()[mode]
+    master.mav.set_mode_send(
+        master.target_system,
+        mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED,
+        mode_id)
+
+    # Wait for mode to change
+    while True:
+        # Check if mode changed
+        if master.flightmode == mode:
+            print(f"Mode changed to {mode}")
+            break
+        time.sleep(1)
+
+
 def arm_and_takeoff(master, aTargetAltitude):
     """
     Arms vehicle and fly to aTargetAltitude.
@@ -26,14 +47,13 @@ def arm_and_takeoff(master, aTargetAltitude):
     
 
     # Confirm vehicle armed before attempting to take off
-    while not master.motors_armed():
-        print(master.motors_armed())
-        master.mav.command_long_send(
-        master.target_system, master.target_component,
-        mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM,
-        0, 1, 0, 0, 0, 0, 0, 0)
-        # print(" Waiting for arming...")
-        time.sleep(1)
+    # while not master.motors_armed():
+    master.mav.command_long_send(
+    master.target_system, master.target_component,
+    mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM,
+    0, 1, 0, 0, 0, 0, 0, 0)
+    print(" Waiting for arming...")
+    time.sleep(0.5)
 
     print("Taking off!")
     master.mav.command_long_send(
@@ -44,7 +64,7 @@ def arm_and_takeoff(master, aTargetAltitude):
     # Wait until the vehicle reaches a safe height
     while True:
         print(" Altitude: ", master.location().alt)
-        if master.location().alt >= aTargetAltitude * 0.95:  # Trigger just below target alt.
+        if master.location().alt >= aTargetAltitude * 0.90:  # Trigger just below target alt.
             print("Reached target altitude")
             break
         time.sleep(1)
@@ -178,8 +198,8 @@ def main():
     # Establishing connection with the drone
     master = mavutil.mavlink_connection('udp:127.0.0.1:14550')
     master.wait_heartbeat()
-
-    arm_and_takeoff(master, 7/3.28)
+    set_mode(master, "GUIDED")
+    arm_and_takeoff(master, 8/3.28)
 
     run(master,args.model, int(args.cameraId), args.frameWidth, args.frameHeight, int(args.numThreads), bool(args.enableEdgeTPU))
 
