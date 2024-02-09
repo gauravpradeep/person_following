@@ -196,7 +196,7 @@ def main():
     args = parser.parse_args()
 
     # Establishing connection with the drone
-    master = mavutil.mavlink_connection('udp:127.0.0.1:14550')
+    master = mavutil.mavlink_connection('/dev/ttyACM0')
     master.wait_heartbeat()
     set_mode(master, "GUIDED")
     arm_and_takeoff(master, 8/3.28)
